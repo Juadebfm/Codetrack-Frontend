@@ -1,9 +1,8 @@
 import { useContext, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthField from "../components/auth/AuthField.jsx";
-import AuthLayout from "../components/auth/AuthLayout.jsx";
+import AuthLayout, { SocialLoginButton } from "../components/auth/AuthLayout.jsx";
 import PasswordField from "../components/auth/PasswordField.jsx";
-import SocialLoginButton from "../components/auth/SocialLoginButton.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
 
 const initialValues = { displayName: "", email: "", password: "" };

@@ -1,82 +1,159 @@
-import { createContext, useCallback, useMemo, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import PropTypes from "prop-types";
-import { getMockData } from "../services/mockDataService.js";
 
+// Initiate the context
 const AuthContext = createContext(null);
-const USERS_KEY = "codetrack-demo-users";
-const SESSION_KEY = "codetrack-session";
 
-const publicUser = (account) => {
-    const user = { ...account };
-    delete user.password_hash;
-    return user;
-};
-const readJson = (storage, key, fallback) => {
-    try {
-        return JSON.parse(storage.getItem(key)) ?? fallback;
-    } catch {
-        storage.removeItem(key);
-        return fallback;
-    }
-};
-const readSession = () => readJson(sessionStorage, SESSION_KEY, null) ?? readJson(localStorage, SESSION_KEY, null);
-const hashPassword = async (password) => {
-    const bytes = new TextEncoder().encode(password);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
+// Connect to the backend so the be can help the fe to collect info from db
+const API_BASE_URL = (
+  import.meta.env.VITE_API_URL ||
+  "https://codetrack-backend-o1n5.onrender.com/api/v1"
+).replace(/\/$/, "");
 
-export function AuthProvider({ children }) {
-    const [mockUsers, setMockUsers] = useState(() => [...getMockData().mock_auth_users, ...readJson(localStorage, USERS_KEY, [])]);
-    const [currentUser, setCurrentUser] = useState(readSession);
+// a function that does the actual request
+async function apiRequest(endpoint, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
+    },
+  });
 
-    const persistSession = useCallback((user, remember) => {
-        const storage = remember ? localStorage : sessionStorage;
-        const otherStorage = remember ? sessionStorage : localStorage;
-        otherStorage.removeItem(SESSION_KEY);
-        storage.setItem(SESSION_KEY, JSON.stringify(user));
-        setCurrentUser(user);
-    }, []);
+  let payload = {};
 
-    const signIn = useCallback(async (email, password, remember = false) => {
-        const passwordHash = await hashPassword(password);
-        const matchingUser = mockUsers.find((user) => user.email.toLowerCase() === email.trim().toLowerCase() && user.password_hash === passwordHash);
-        if (!matchingUser) return { success: false, message: "Invalid email or password." };
-        const user = publicUser(matchingUser);
-        persistSession(user, remember);
-        return { success: true, message: "Sign in successful.", user };
-    }, [mockUsers, persistSession]);
+  try {
+    payload = await response.json();
+  } catch {
+    // empty : we just want to have to create another error catcher should the BE respond with a non-json response
+  }
 
-    const signUp = useCallback(async ({ displayName, email, password }) => {
-        const normalizedEmail = email.trim().toLowerCase();
-        if (mockUsers.some((user) => user.email.toLowerCase() === normalizedEmail)) return { success: false, message: "Email already in use." };
-        const newUser = {
-            id: crypto.randomUUID(), display_name: displayName.trim(), email: normalizedEmail,
-            password_hash: await hashPassword(password), plan: "free",
-            time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-        };
-        localStorage.setItem(USERS_KEY, JSON.stringify([...readJson(localStorage, USERS_KEY, []), newUser]));
-        setMockUsers((users) => [...users, newUser]);
-        const user = publicUser(newUser);
-        persistSession(user, true);
-        return { success: true, message: "Sign up successful.", user };
-    }, [mockUsers, persistSession]);
+  if (!response.ok) {
+    const error = new Error(
+      payload.error?.message || "Something went wrong. Please try again",
+    );
+    error.status = response.status;
+    throw error;
+  }
 
-    const signInWithProvider = useCallback((provider, remember = true) => {
-        const user = publicUser(mockUsers[0]);
-        persistSession(user, remember);
-        return { success: true, message: `${provider} demo sign-in successful.`, user };
-    }, [mockUsers, persistSession]);
-
-    const signOut = useCallback(() => {
-        localStorage.removeItem(SESSION_KEY);
-        sessionStorage.removeItem(SESSION_KEY);
-        setCurrentUser(null);
-    }, []);
-
-    const value = useMemo(() => ({ currentUser, isAuthenticated: Boolean(currentUser), signIn, signInWithProvider, signOut, signUp }), [currentUser, signIn, signInWithProvider, signOut, signUp]);
-    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return payload;
 }
 
-AuthProvider.propTypes = { children: PropTypes.node.isRequired };
+export function AuthProvider({ children }) {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isLoading, setIsloading] = useState(true);
+
+  // check who is currently logged to verify them, if their session has expired call a new session rerfresh token for them, if not (if they are not a valid user) return then to a login/register
+  useEffect(() => {
+    let isActive = true;
+
+    async function loadSession() {
+      try {
+        let response;
+        try {
+          response = await apiRequest("/auth/me");
+        } catch (error) {
+          if (error.status !== 401) throw error;
+          await apiRequest("/auth/refresh", { method: "POST" });
+          response = await apiRequest("/auth/me");
+        }
+
+        if (isActive) setCurrentUser(response.user);
+      } catch {
+        if (isActive) setCurrentUser(null);
+      } finally {
+        if (isActive) setIsloading(false);
+      }
+    }
+
+    loadSession();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  const signIn = useCallback(async (email, password) => {
+    const response = await apiRequest("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email: password }),
+    });
+    setCurrentUser(response.user);
+    return response;
+  }, []);
+
+  const signUp = useCallback(async ({ displayName, email, password }) => {
+    try {
+      const response = await apiRequest("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({ displayName, email, password }),
+      });
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
+  const verifyEmail = useCallback(async (token) => {
+    try {
+      const query = new URLSearchParams({ token });
+      const response = await apiRequest(`/auth/verify-email?${query}`);
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
+  const signOut = useCallback(async () => {
+    try {
+      const response = await apiRequest("/auth/logout", { method: "POST" });
+      setCurrentUser(null);
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      currentUser,
+      isAuthenticated: Boolean(currentUser),
+      isLoading,
+      signIn,
+      signUp,
+      signOut,
+      verifyEmail,
+    }),
+    [currentUser, isLoading, signIn, signOut, signUp, verifyEmail],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+AuthProvider.PropTypes = {
+  children: PropTypes.node.isRequired,
+};
+
 export { AuthContext };

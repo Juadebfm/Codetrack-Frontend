@@ -1,6 +1,6 @@
 import { LayoutGrid, SquarePen, Target, GraduationCap, BarChart3, LogOut } from 'lucide-react';
 import PropTypes from 'prop-types';
-import Brand from '../auth/Brand.jsx';
+import { Brand } from '../auth/AuthLayout.jsx';
 
 const DashboardSidebar = ({ name, onSignOut, plan }) => {
   const navItems = [

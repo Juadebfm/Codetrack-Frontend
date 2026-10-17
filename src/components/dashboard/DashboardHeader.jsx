@@ -1,7 +1,7 @@
 import { Flame, Plus } from 'lucide-react';
 import PropTypes from 'prop-types';
 import { useEffect, useState } from 'react';
-import Brand from '../auth/Brand.jsx';
+import { Brand } from '../auth/AuthLayout.jsx';
 
 const DashboardHeader = ({ name, streak, onLog }) => {
   const [today, setToday] = useState(() => new Date());
