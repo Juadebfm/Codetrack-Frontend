@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  min-width: 320px;
+  margin: 0;
+  color: #111827;
+  background: #f4f7f5;
+}
+
+button,
+a,
+select,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
