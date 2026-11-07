@@ -121,6 +121,58 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const resendVerification = useCallback(async (email) => {
+    try {
+      const response = await apiRequest("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
+  const requestPasswordReset = useCallback(async (email) => {
+    try {
+      const response = await apiRequest("/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email }),
+      });
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
+  const resetPassword = useCallback(async (token, password) => {
+    try {
+      const response = await apiRequest("/auth/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token, password }),
+      });
+
+      setCurrentUser(null);
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+      };
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       const response = await apiRequest("/auth/logout", { method: "POST" });
@@ -145,8 +197,21 @@ export function AuthProvider({ children }) {
       signUp,
       signOut,
       verifyEmail,
+      resendVerification,
+      requestPasswordReset,
+      resetPassword,
     }),
-    [currentUser, isLoading, signIn, signOut, signUp, verifyEmail],
+    [
+      currentUser,
+      isLoading,
+      signIn,
+      signOut,
+      signUp,
+      verifyEmail,
+      resendVerification,
+      requestPasswordReset,
+      resetPassword,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

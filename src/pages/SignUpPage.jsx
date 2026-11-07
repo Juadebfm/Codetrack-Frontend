@@ -42,9 +42,16 @@ const SignUpPage = () => {
 
         setIsSubmitting(true);
         try {
+            const verificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
             const result = await signUp(form);
             if (!result.success) return setNotice(result.message);
-            navigate("/dashboard", { replace: true });
+            navigate("/verify-email", {
+                replace: true,
+                state: {
+                    email: form.email.trim(),
+                    verificationExpiresAt,
+                },
+            });
         } finally {
             setIsSubmitting(false);
         }
