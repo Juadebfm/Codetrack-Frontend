@@ -3,13 +3,13 @@ import { Link } from "react-router-dom";
 import AuthField from "../components/auth/AuthField.jsx";
 import AuthLayout from "../components/auth/AuthLayout.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
+import { toast } from "react-toastify";
 
 const ForgotPasswordPage = () => {
   const { requestPasswordReset } = useContext(AuthContext);
   const emailRef = useRef(null);
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
-  const [requestError, setRequestError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -21,16 +21,14 @@ const ForgotPasswordPage = () => {
       return;
     }
     setError("");
-    setRequestError("");
     setNotice("");
     setIsSubmitting(true);
 
     try {
       const result = await requestPasswordReset(email.trim());
       if (!result.success) {
-        setRequestError(
-          result.message ||
-            "We couldn't send reset instructions. Please try again.",
+        toast.error(
+          result.message || "We couldn't send reset instructions. Please try again.",
         );
         return;
       }
@@ -38,9 +36,7 @@ const ForgotPasswordPage = () => {
         "If an account matches that address, reset instructions have been sent.",
       );
     } catch {
-      setRequestError(
-        "We couldn't send reset instructions right now. Please try again.",
-      );
+      toast.error("We couldn't send reset instructions right now. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -62,14 +58,6 @@ const ForgotPasswordPage = () => {
             {notice}
           </p>
         )}
-        {requestError && (
-          <p
-            className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-            role="alert"
-          >
-            {requestError}
-          </p>
-        )}
         <AuthField error={error} id="reset-email" label="Email">
           <input
             ref={emailRef}
@@ -82,7 +70,6 @@ const ForgotPasswordPage = () => {
             onChange={(event) => {
               setEmail(event.target.value);
               setNotice("");
-              setRequestError("");
               if (error)
                 setError(
                   /^\S+@\S+\.\S+$/.test(event.target.value.trim()) ? "" : error,

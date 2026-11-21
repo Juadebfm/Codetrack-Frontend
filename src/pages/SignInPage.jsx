@@ -3,7 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import AuthField from "../components/auth/AuthField.jsx";
 import AuthLayout, { SocialLoginButton } from "../components/auth/AuthLayout.jsx";
 import PasswordField from "../components/auth/PasswordField.jsx";
+import VerificationRecoveryToast from "../components/auth/VerificationRecoveryToast.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
+import { useVerificationResend } from "../hooks/useVerificationResend.js";
+import { toast } from "react-toastify";
 
 const initialValues = { email: "", password: "", remember: true };
 const emailPattern = /^\S+@\S+\.\S+$/;
@@ -11,10 +14,10 @@ const emailPattern = /^\S+@\S+\.\S+$/;
 const SignInPage = () => {
     const { signIn, signInWithProvider } = useContext(AuthContext);
     const navigate = useNavigate();
+    const resendVerificationAndContinue = useVerificationResend();
     const formRef = useRef(null);
     const [form, setForm] = useState(initialValues);
     const [errors, setErrors] = useState({});
-    const [notice, setNotice] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const validateField = (name, value) => {
@@ -28,13 +31,28 @@ const SignInPage = () => {
         const nextValue = type === "checkbox" ? checked : value;
         setForm((current) => ({ ...current, [name]: nextValue }));
         if (errors[name]) setErrors((current) => ({ ...current, [name]: validateField(name, nextValue) }));
-        setNotice("");
     };
 
     const focusFirstError = (nextErrors) => requestAnimationFrame(() => {
         const firstName = Object.keys(nextErrors)[0];
         formRef.current?.elements.namedItem(firstName)?.focus();
     });
+
+    const showVerificationRecovery = (email) => {
+        const recoveryToastId = toast.error(
+            <VerificationRecoveryToast
+                message="This email address hasn't been verified yet. Verify it before signing in. Resend a code, or sign in again if you've already verified."
+                onResend={() =>
+                    resendVerificationAndContinue(email, recoveryToastId)
+                }
+                onSignIn={() => {
+                    toast.dismiss(recoveryToastId);
+                    navigate("/signin", { replace: true });
+                }}
+            />,
+            { autoClose: false },
+        );
+    };
 
     const handleSubmit = async (event) => {
         event.preventDefault();
@@ -52,8 +70,17 @@ const SignInPage = () => {
         setIsSubmitting(true);
         try {
             const result = await signIn(form.email, form.password, form.remember);
-            if (!result.success) return setNotice(result.message);
+            if (!result.success) {
+                toast.error(result.message || "We couldn't log you in. Check your details and try again.");
+                return;
+            }
             navigate("/dashboard", { replace: true });
+        } catch (error) {
+            if (error.code === "EMAIL_NOT_VERIFIED") {
+                showVerificationRecovery(form.email.trim());
+            } else {
+                toast.error(error.message || "We couldn't log you in right now. Please try again.");
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -66,7 +93,6 @@ const SignInPage = () => {
 
     return (
         <AuthLayout description="Log in to keep your streak going." mobileMessage="Welcome back." title="Welcome back" variant="signin">
-            {notice && <div aria-live="assertive" className="fixed right-4 top-4 z-50 max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg" role="alert">{notice}</div>}
             <form className="mt-6 space-y-5" noValidate onSubmit={handleSubmit} ref={formRef}>
                 <div className="space-y-2.5">
                     <SocialLoginButton icon="/icons/github%20icon.png" onClick={() => handleSocialLogin("GitHub")} provider="GitHub" />

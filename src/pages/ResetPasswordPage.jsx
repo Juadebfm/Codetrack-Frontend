@@ -4,6 +4,7 @@ import AuthField from "../components/auth/AuthField.jsx";
 import AuthLayout from "../components/auth/AuthLayout.jsx";
 import PasswordField from "../components/auth/PasswordField.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
+import { toast } from "react-toastify";
 
 const ResetPasswordPage = () => {
   const { resetPassword } = useContext(AuthContext);
@@ -14,7 +15,6 @@ const ResetPasswordPage = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [confirmError, setConfirmError] = useState("");
-  const [requestError, setRequestError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
 
@@ -22,10 +22,9 @@ const ResetPasswordPage = () => {
     event.preventDefault();
     setPasswordError("");
     setConfirmError("");
-    setRequestError("");
 
     if (!token) {
-      setRequestError("This reset link is missing its token. Request a new one.");
+      toast.error("This reset link is missing its token. Request a new one.");
       return;
     }
 
@@ -46,13 +45,15 @@ const ResetPasswordPage = () => {
     try {
       const result = await resetPassword(token, password);
       if (!result.success) {
-        setRequestError(result.message || "We couldn't reset your password. Request a new link and try again.");
+        toast.error(
+          result.message || "We couldn't reset your password. Request a new link and try again.",
+        );
         return;
       }
 
       setIsComplete(true);
     } catch {
-      setRequestError("We couldn't reset your password right now. Please try again.");
+      toast.error("We couldn't reset your password right now. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -99,14 +100,6 @@ const ResetPasswordPage = () => {
         </div>
       ) : (
         <form className="mt-6 space-y-5" noValidate onSubmit={handleSubmit} ref={formRef}>
-          {requestError && (
-            <p
-              className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-              role="alert"
-            >
-              {requestError}
-            </p>
-          )}
           <AuthField error={passwordError} id="password" label="New password">
             <PasswordField
               describedBy="password-help"
@@ -114,7 +107,6 @@ const ResetPasswordPage = () => {
               onChange={(event) => {
                 setPassword(event.target.value);
                 setPasswordError("");
-                setRequestError("");
               }}
               placeholder="At least 8 characters"
               value={password}
@@ -130,7 +122,6 @@ const ResetPasswordPage = () => {
               onChange={(event) => {
                 setConfirmPassword(event.target.value);
                 setConfirmError("");
-                setRequestError("");
               }}
               placeholder="Enter your new password again"
               value={confirmPassword}

@@ -1,11 +1,14 @@
 import { useContext, useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { toast } from "react-toastify";
+import AuthField from "../components/auth/AuthField.jsx";
 import AuthLayout from "../components/auth/AuthLayout.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
 
 const CODE_LENGTH = 6;
 const VERIFICATION_TOKEN_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const emptyCode = Array(CODE_LENGTH).fill("");
+const emailPattern = /^\S+@\S+\.\S+$/;
 
 const formatCountdown = (milliseconds) => {
   const totalSeconds = Math.ceil(milliseconds / 1000);
@@ -19,21 +22,34 @@ const formatCountdown = (milliseconds) => {
 };
 
 const VerifyEmailPage = () => {
-  const { verifyEmail, resendVerification } = useContext(AuthContext);
+  const { verifyEmailLink, verifyEmailCode, resendVerification } =
+    useContext(AuthContext);
   const location = useLocation();
-  const email =
+  const [searchParams] = useSearchParams();
+  const hasToken = searchParams.has("token");
+  const token = searchParams.get("token") ?? "";
+  const initialEmail =
     typeof location.state?.email === "string" ? location.state.email : "";
   const initialExpiry =
     typeof location.state?.verificationExpiresAt === "number"
       ? location.state.verificationExpiresAt
       : null;
   const inputRefs = useRef([]);
+  const emailRef = useRef(null);
+  const linkRequestsRef = useRef(new Map());
+  const [email, setEmail] = useState(initialEmail);
+  const [emailError, setEmailError] = useState("");
   const [code, setCode] = useState(emptyCode);
   const [error, setError] = useState("");
   const [resendMessage, setResendMessage] = useState("");
+  const [isResendSuccess, setIsResendSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
+  const [linkResult, setLinkResult] = useState({
+    token,
+    status: hasToken ? "loading" : "idle",
+  });
   const [expiresAt, setExpiresAt] = useState(initialExpiry);
   const [currentTime, setCurrentTime] = useState(
     initialExpiry === null
@@ -43,6 +59,42 @@ const VerifyEmailPage = () => {
   const remainingTime =
     expiresAt === null ? null : Math.max(0, expiresAt - currentTime);
   const isExpired = remainingTime !== null && remainingTime === 0;
+  const linkStatus = hasToken
+    ? linkResult.token === token
+      ? linkResult.status
+      : "loading"
+    : "idle";
+
+  useEffect(() => {
+    if (!hasToken) return undefined;
+
+    let isActive = true;
+    const pendingRequest =
+      linkRequestsRef.current.get(token) ?? verifyEmailLink(token);
+    linkRequestsRef.current.set(token, pendingRequest);
+
+    pendingRequest
+      .then((result) => {
+        if (!isActive) return;
+
+        setLinkResult({
+          token,
+          status: result.success ? "success" : "error",
+        });
+      })
+      .catch(() => {
+        if (isActive) setLinkResult({ token, status: "error" });
+      })
+      .finally(() => {
+        if (linkRequestsRef.current.get(token) === pendingRequest) {
+          linkRequestsRef.current.delete(token);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [hasToken, token, verifyEmailLink]);
 
   useEffect(() => {
     if (expiresAt === null) return undefined;
@@ -53,6 +105,17 @@ const VerifyEmailPage = () => {
 
     return () => window.clearInterval(timer);
   }, [expiresAt]);
+
+  const validateEmail = () => {
+    if (!emailPattern.test(email.trim())) {
+      setEmailError("Enter a valid email address.");
+      emailRef.current?.focus();
+      return false;
+    }
+
+    setEmailError("");
+    return true;
+  };
 
   const updateCode = (index, value) => {
     const digits = value.replace(/\D/g, "").slice(0, CODE_LENGTH - index);
@@ -99,8 +162,10 @@ const VerifyEmailPage = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const verificationCode = code.join("");
 
+    if (!validateEmail()) return;
+
+    const verificationCode = code.join("");
     if (isExpired) {
       setError("This code has expired. Request a new code to continue.");
       return;
@@ -117,11 +182,10 @@ const VerifyEmailPage = () => {
     setError("");
 
     try {
-      const result = await verifyEmail(verificationCode);
+      const result = await verifyEmailCode(email.trim(), verificationCode);
       if (!result.success) {
         setError(
-          result.message ||
-            "We couldn't verify that code. Check it and try again.",
+          "That code is incorrect, expired, or has already been used. Request a new code to continue.",
         );
         return;
       }
@@ -135,16 +199,17 @@ const VerifyEmailPage = () => {
   };
 
   const handleResend = async () => {
-    if (!email || isResending) return;
+    if (isResending || !validateEmail()) return;
 
     setIsResending(true);
     setResendMessage("");
+    setIsResendSuccess(false);
     setError("");
 
     try {
-      const result = await resendVerification(email);
+      const result = await resendVerification(email.trim());
       if (!result.success) {
-        setResendMessage(
+        toast.error(
           result.message || "We couldn't resend the code. Please try again.",
         );
         return;
@@ -153,29 +218,45 @@ const VerifyEmailPage = () => {
       setCode([...emptyCode]);
       setExpiresAt(Date.now() + VERIFICATION_TOKEN_LIFETIME_MS);
       setCurrentTime(Date.now());
+      setIsResendSuccess(true);
       setResendMessage(
         "If an unverified account exists for this email, a new code has been sent.",
       );
       inputRefs.current[0]?.focus();
     } catch {
-      setResendMessage("We couldn't resend the code right now. Please try again.");
+      toast.error("We couldn't resend the code right now. Please try again.");
     } finally {
       setIsResending(false);
     }
   };
 
+  const showSuccess = hasToken
+    ? linkStatus === "success"
+    : isVerified;
+  const showLinkError = hasToken && linkStatus === "error";
+
   return (
     <AuthLayout
       description={
-        isVerified
+        showSuccess
           ? "Your email address has been confirmed."
-          : "Enter the 6-digit code we sent to your inbox."
+          : hasToken
+            ? linkStatus === "loading"
+              ? "Confirming your email address."
+              : "We couldn't confirm this verification link."
+            : "Enter the 6-digit code we sent to your inbox."
       }
       mobileMessage="Verify email."
-      title={isVerified ? "Email verified" : "Check your email"}
+      title={
+        showSuccess
+          ? "Email verified"
+          : hasToken
+            ? "Verify your email"
+            : "Check your email"
+      }
       variant="signin"
     >
-      {isVerified ? (
+      {showSuccess ? (
         <div className="mt-6 space-y-5">
           <p
             className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm leading-6 text-emerald-800"
@@ -190,6 +271,66 @@ const VerifyEmailPage = () => {
             Continue to log in
           </Link>
         </div>
+      ) : hasToken ? (
+        <div className="mt-6 space-y-5">
+          {linkStatus === "loading" ? (
+            <p className="text-sm text-slate-600" role="status">
+              Verifying your email link…
+            </p>
+          ) : showLinkError ? (
+            <>
+              <p
+                className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700"
+                role="alert"
+              >
+                This verification link is invalid, expired, or has already
+                been used. Request a new code to continue.
+              </p>
+              <AuthField error={emailError} id="link-email" label="Email">
+                <input
+                  ref={emailRef}
+                  aria-describedby={emailError ? "link-email-error" : undefined}
+                  aria-invalid={Boolean(emailError)}
+                  autoComplete="email"
+                  className={`h-11 w-full rounded-xl border bg-white px-3 text-base text-slate-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 ${emailError ? "border-red-500" : "border-slate-200"}`}
+                  id="link-email"
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setEmailError("");
+                    setResendMessage("");
+                  }}
+                  placeholder="you@example.com"
+                  type="email"
+                  value={email}
+                />
+              </AuthField>
+              {resendMessage && (
+                <p
+                  className={`text-sm ${isResendSuccess ? "text-emerald-700" : "text-red-600"}`}
+                  role={isResendSuccess ? "status" : "alert"}
+                >
+                  {resendMessage}
+                </p>
+              )}
+              <button
+                className="h-[52px] w-full rounded-xl bg-[#16a34a] text-base font-semibold text-white shadow-[0_10px_20px_-12px_rgba(22,163,74,0.9)] transition hover:bg-green-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70"
+                disabled={isResending}
+                onClick={handleResend}
+                type="button"
+              >
+                {isResending ? "Sending…" : "Request a new code"}
+              </button>
+              <p className="text-center text-sm text-slate-600">
+                <Link
+                  className="font-semibold text-teal-600 hover:text-teal-700"
+                  to="/signin"
+                >
+                  Return to sign in
+                </Link>
+              </p>
+            </>
+          ) : null}
+        </div>
       ) : (
         <form className="mt-6 space-y-5" noValidate onSubmit={handleSubmit}>
           <div className="space-y-1 text-sm leading-6 text-slate-600">
@@ -199,13 +340,31 @@ const VerifyEmailPage = () => {
                 <span className="font-semibold text-slate-900">{email}</span>.
               </p>
             ) : (
-              <p>
-                We sent a verification code to the email address you used to
-                sign up.
-              </p>
+              <p>Enter the email address you used to sign up.</p>
             )}
             <p className="text-slate-500">Check your inbox and spam folder.</p>
           </div>
+
+          <AuthField error={emailError} id="verification-email" label="Email">
+            <input
+              ref={emailRef}
+              aria-describedby={
+                emailError ? "verification-email-error" : undefined
+              }
+              aria-invalid={Boolean(emailError)}
+              autoComplete="email"
+              className={`h-11 w-full rounded-xl border bg-white px-3 text-base text-slate-900 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 ${emailError ? "border-red-500" : "border-slate-200"}`}
+              id="verification-email"
+              onChange={(event) => {
+                setEmail(event.target.value);
+                setEmailError("");
+                setResendMessage("");
+              }}
+              placeholder="you@example.com"
+              type="email"
+              value={email}
+            />
+          </AuthField>
 
           <fieldset
             aria-describedby={
@@ -267,10 +426,8 @@ const VerifyEmailPage = () => {
 
           {resendMessage && (
             <p
-              className={`text-sm ${resendMessage.startsWith("If an unverified") ? "text-emerald-700" : "text-red-600"}`}
-              role={
-                resendMessage.startsWith("If an unverified") ? "status" : "alert"
-              }
+              className={`text-sm ${isResendSuccess ? "text-emerald-700" : "text-red-600"}`}
+              role={isResendSuccess ? "status" : "alert"}
             >
               {resendMessage}
             </p>
@@ -288,7 +445,7 @@ const VerifyEmailPage = () => {
             Didn’t get the code?{" "}
             <button
               className="font-semibold text-teal-600 hover:text-teal-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 disabled:cursor-wait disabled:opacity-60"
-              disabled={!email || isResending}
+              disabled={isResending}
               onClick={handleResend}
               type="button"
             >
@@ -303,6 +460,13 @@ const VerifyEmailPage = () => {
               to="/signup"
             >
               Back to sign up
+            </Link>
+            {" · "}
+            <Link
+              className="font-semibold text-teal-600 hover:text-teal-700"
+              to="/signin"
+            >
+              Sign in
             </Link>
           </p>
         </form>

@@ -11,10 +11,7 @@ import PropTypes from "prop-types";
 const AuthContext = createContext(null);
 
 // Connect to the backend so the be can help the fe to collect info from db
-const API_BASE_URL = (
-  import.meta.env.VITE_API_URL ||
-  "https://codetrack-backend-o1n5.onrender.com/api/v1"
-).replace(/\/$/, "");
+const API_BASE_URL = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 
 // a function that does the actual request
 async function apiRequest(endpoint, options = {}) {
@@ -40,6 +37,7 @@ async function apiRequest(endpoint, options = {}) {
       payload.error?.message || "Something went wrong. Please try again",
     );
     error.status = response.status;
+    error.code = payload.error?.code;
     throw error;
   }
 
@@ -83,10 +81,10 @@ export function AuthProvider({ children }) {
   const signIn = useCallback(async (email, password) => {
     const response = await apiRequest("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email: password }),
+      body: JSON.stringify({ email, password }),
     });
     setCurrentUser(response.user);
-    return response;
+    return { success: true, ...response };
   }, []);
 
   const signUp = useCallback(async ({ displayName, email, password }) => {
@@ -102,11 +100,12 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
       };
     }
   }, []);
 
-  const verifyEmail = useCallback(async (token) => {
+  const verifyEmailLink = useCallback(async (token) => {
     try {
       const query = new URLSearchParams({ token });
       const response = await apiRequest(`/auth/verify-email?${query}`);
@@ -117,6 +116,25 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
+      };
+    }
+  }, []);
+
+  const verifyEmailCode = useCallback(async (email, code) => {
+    try {
+      const response = await apiRequest("/auth/verify-email/code", {
+        method: "POST",
+        body: JSON.stringify({ email, code }),
+      });
+
+      return { success: true, ...response };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+        status: error.status,
+        code: error.code,
       };
     }
   }, []);
@@ -134,6 +152,7 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
       };
     }
   }, []);
@@ -151,6 +170,7 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
       };
     }
   }, []);
@@ -169,6 +189,7 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
       };
     }
   }, []);
@@ -184,6 +205,7 @@ export function AuthProvider({ children }) {
         success: false,
         message: error.message,
         status: error.status,
+        code: error.code,
       };
     }
   }, []);
@@ -196,7 +218,8 @@ export function AuthProvider({ children }) {
       signIn,
       signUp,
       signOut,
-      verifyEmail,
+      verifyEmailLink,
+      verifyEmailCode,
       resendVerification,
       requestPasswordReset,
       resetPassword,
@@ -207,7 +230,8 @@ export function AuthProvider({ children }) {
       signIn,
       signOut,
       signUp,
-      verifyEmail,
+      verifyEmailLink,
+      verifyEmailCode,
       resendVerification,
       requestPasswordReset,
       resetPassword,

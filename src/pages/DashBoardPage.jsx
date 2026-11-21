@@ -20,9 +20,20 @@ const DashBoardPage = () => {
   const profile = profiles.find((item) => item.id === currentUser.id) ?? {
     id: currentUser.id,
     display_name: currentUser.display_name,
-    plan: currentUser.plan,
+    displayName: currentUser.displayName,
+    plan: currentUser.plan ?? 'free',
     time_zone: currentUser.time_zone,
   };
+  const displayName = [
+    profile.display_name,
+    profile.displayName,
+    currentUser.display_name,
+    currentUser.displayName,
+    currentUser.name,
+    typeof currentUser.email === 'string'
+      ? currentUser.email.split('@')[0]
+      : '',
+  ].find((value) => typeof value === 'string' && value.trim())?.trim() ?? 'Learner';
   const profileLogs = learningLogs.filter((log) => log.profile_id === profile.id);
   const profileGoals = goals.filter((goal) => goal.profile_id === profile.id);
   const metrics = useMemo(
@@ -46,13 +57,13 @@ const DashBoardPage = () => {
   return (
     <div className="min-h-screen bg-[#f4f7f5]">
       {/* Sidebar - Hidden on mobile */}
-      <DashboardSidebar name={profile.display_name} plan={profile.plan} onSignOut={signOut} />
+      <DashboardSidebar name={displayName} plan={profile.plan ?? 'free'} onSignOut={signOut} />
 
       {/* Main Content */}
       <main id="top" className="w-full pb-24 md:ml-60 md:w-[calc(100%-15rem)] md:pb-8">
         {/* Header */}
         <DashboardHeader
-          name={profile?.display_name || 'Alex'}
+          name={displayName}
           streak={metrics.streak}
           onLog={() => setShowLogForm(true)}
         />

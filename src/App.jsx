@@ -1,5 +1,7 @@
 import { useContext } from "react";
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { AuthContext } from "./contexts/AuthContext.jsx";
 import DashBoardPage from "./pages/DashBoardPage.jsx";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage.jsx";
@@ -21,6 +23,15 @@ const GuestRoute = () => {
 
 const App = () => (
     <BrowserRouter>
+        <ToastContainer
+            autoClose={5000}
+            closeOnClick
+            limit={3}
+            newestOnTop={false}
+            pauseOnHover
+            position="bottom-center"
+            theme="light"
+        />
         <Routes>
             <Route element={<GuestRoute />}>
                 <Route element={<SignInPage />} path="/signin" />

@@ -3,7 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import AuthField from "../components/auth/AuthField.jsx";
 import AuthLayout, { SocialLoginButton } from "../components/auth/AuthLayout.jsx";
 import PasswordField from "../components/auth/PasswordField.jsx";
+import VerificationRecoveryToast from "../components/auth/VerificationRecoveryToast.jsx";
 import { AuthContext } from "../contexts/AuthContext.jsx";
+import { useVerificationResend } from "../hooks/useVerificationResend.js";
+import { toast } from "react-toastify";
 
 const initialValues = { displayName: "", email: "", password: "" };
 const emailPattern = /^\S+@\S+\.\S+$/;
@@ -11,10 +14,10 @@ const emailPattern = /^\S+@\S+\.\S+$/;
 const SignUpPage = () => {
     const { signInWithProvider, signUp } = useContext(AuthContext);
     const navigate = useNavigate();
+    const resendVerificationAndContinue = useVerificationResend();
     const formRef = useRef(null);
     const [form, setForm] = useState(initialValues);
     const [errors, setErrors] = useState({});
-    const [notice, setNotice] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const validateField = (name, value) => {
@@ -28,7 +31,6 @@ const SignUpPage = () => {
         const { name, value } = event.target;
         setForm((current) => ({ ...current, [name]: value }));
         if (errors[name]) setErrors((current) => ({ ...current, [name]: validateField(name, value) }));
-        setNotice("");
     };
 
     const handleSubmit = async (event) => {
@@ -44,7 +46,33 @@ const SignUpPage = () => {
         try {
             const verificationExpiresAt = Date.now() + 24 * 60 * 60 * 1000;
             const result = await signUp(form);
-            if (!result.success) return setNotice(result.message);
+            if (!result.success) {
+                if (
+                    result.status === 409 &&
+                    result.code === "ACCOUNT_ALREADY_EXISTS"
+                ) {
+                    const email = form.email.trim();
+                    const recoveryToastId = toast.error(
+                        <VerificationRecoveryToast
+                            message="An account with this email already exists. If it still needs verification, you can resend a code. If it's already verified, sign in."
+                            onResend={() =>
+                                resendVerificationAndContinue(
+                                    email,
+                                    recoveryToastId,
+                                )
+                            }
+                            onSignIn={() => {
+                                toast.dismiss(recoveryToastId);
+                                navigate("/signin", { replace: true });
+                            }}
+                        />,
+                        { autoClose: false },
+                    );
+                    return;
+                }
+                toast.error(result.message || "We couldn't create your account. Please try again.");
+                return;
+            }
             navigate("/verify-email", {
                 replace: true,
                 state: {
@@ -52,6 +80,8 @@ const SignUpPage = () => {
                     verificationExpiresAt,
                 },
             });
+        } catch {
+            toast.error("We couldn't create your account right now. Please try again.");
         } finally {
             setIsSubmitting(false);
         }
@@ -64,7 +94,6 @@ const SignUpPage = () => {
 
     return (
         <AuthLayout description="Start your streak in under a minute." mobileMessage="Day 1 starts here." title="Create your account" variant="signup">
-            {notice && <div aria-live="assertive" className="fixed right-4 top-4 z-50 max-w-sm rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 shadow-lg" role="alert">{notice}</div>}
             <form className="mt-6 space-y-5" noValidate onSubmit={handleSubmit} ref={formRef}>
                 <div className="space-y-2.5">
                     <SocialLoginButton icon="/icons/github%20icon.png" onClick={() => handleSocialSignup("GitHub")} provider="GitHub" />
